@@ -22,8 +22,9 @@ import torch.backends.cudnn
 
 
 torch.set_default_tensor_type('torch.DoubleTensor')
+
 if torch.cuda.is_available():
-    torch.backends.cudnn.disable_global_flags()
+    torch.backends.cudnn.enabled = False
 
 
 parser = argparse.ArgumentParser(add_help=False)
