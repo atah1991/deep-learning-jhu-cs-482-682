@@ -319,51 +319,84 @@ class P2Q12RemoveLayerNet(nn.Module):
         x = F.dropout(x, p = dropout,  training=self.training)
         x = self.fc2(x)
         return F.log_softmax(x, dim=1)
-        raise NotImplementedError
+        #raise NotImplementedError
 
 
 class P2Q13UltimateNet(nn.Module):
     def __init__(self):
         super(P2Q13UltimateNet, self).__init__()
+        #self.b_n = nn.BatchNorm2d(1)
         # TODO Implement me
         self.conv1 = nn.Conv2d(1, 32, kernel_size = 3)
-        #self.conv1_bn = nn.BatchNorm2d(32)
+        self.conv1_bn = nn.BatchNorm2d(32)
         self.conv2 = nn.Conv2d(32, 32, kernel_size = 3)
-        #self.conv2_bn = nn.BatchNorm2d(32)
+        self.conv2_bn = nn.BatchNorm2d(32)
         self.conv3 = nn.Conv2d(32, 64, kernel_size = 3)
         self.conv4 = nn.Conv2d(64, 128, kernel_size = 3)
-        #self.conv4_bn = nn.BatchNorm2d(128)
+        self.conv4_bn = nn.BatchNorm2d(128)
 
         self.fc1 = nn.Linear(10368, 512)
-        #self.fc1_bn = nn.BatchNorm2d(512)
+        self.fc1_bn = nn.BatchNorm2d(512)
         self.fc2 = nn.Linear(512, 128)
-        #self.fc2_bn = nn.BatchNorm2d(128)
+        self.fc2_bn = nn.BatchNorm2d(128)
         self.fc3 = nn.Linear(128, 10)
         #raise NotImplementedError
 
     def forward(self, x):
         x = F.relu(self.conv1(x))
-        #x = self.conv1_bn(x)
+        x = self.conv1_bn(x)
         x = F.relu(self.conv2(x))
-        #x = self.conv2_bn(x)
-        x = F.dropout(x, p = 0.5)
+        x = self.conv2_bn(x)
+        x = F.dropout(x, p = 0.25)
         x = F.relu(F.max_pool2d(self.conv3(x),2))
-        x = F.dropout(x, p = 0.5) 
+        x = F.dropout(x, p = 0.25) 
         x = F.relu(self.conv4(x))
-        #x = self.conv4_bn(x)
-        x = F.dropout(x, p = 0.5)
+        x = self.conv4_bn(x)
+        x = F.dropout(x, p = 0.25)
         
         x = x.view(-1, 10368)
         x = F.relu(self.fc1(x))
-        #x = self.fc1(x)
+        x = self.fc1_bn(x)
         x = F.dropout(x, p = 0.5)
         x = F.relu(self.fc2(x))
-        #x = self.fc2(x)
+        x = self.fc2_bn(x)
         x = F.dropout(x, p = 0.5)
         x = self.fc3(x)
         return F.log_softmax(x, dim = 1)
         # TODO Implement me
         #raise NotImplementedError
+
+
+
+class P2Q13UltimateNet2(nn.Module):
+    def __init__(self):
+        super(P2Q13UltimateNet2, self).__init__()
+        self.b_n = nn.BatchNorm2d(1)
+        self.conv1 = nn.Conv2d(1, 64, kernel_size = 3)
+        self.conv2 = nn.Conv2d(64, 512, kernel_size = 3)
+
+        self.fc1 = nn.Linear(12800, 128)
+        self.fc2 = nn.Linear(128, 64)
+        self.fc3 = nn.Linear(64, 10)
+
+    def forward(self, x):
+        x = self.b_n(x)
+        x = F.relu(self.conv1(x))
+        x = F.max_pool2d(x, 2)
+        x = F.relu(self.conv2(x))
+        x = F.max_pool2d(x, 2)
+
+        x = x.view(-1, 12800)
+
+        x = F.relu(self.fc1(x))
+        x = F.dropout(x, p = 0.35)
+        x = F.relu(self.fc2(x))
+        x = F.dropout(x, p = 0.35)
+        x = self.fc3(x)
+
+        return F.log_softmax(x, dim = 1)
+
+
 
 
 def chooseModel(model_name='default', cuda=False):
@@ -377,6 +410,8 @@ def chooseModel(model_name='default', cuda=False):
 
     if args.cuda:
         model.cuda()
+
+    print (model)
     return model
 
 
@@ -384,7 +419,7 @@ def chooseOptimizer(model, optimizer='sgd'):
     if optimizer == 'sgd':
         optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum)
     elif optimizer == 'adam':
-        optimizer = optim.Adam(model.parameters(), lr = args.lr, weight_decay = 0.0001 )
+        optimizer = optim.Adam(model.parameters(), lr = args.lr)
     elif optimizer == 'rmsprop':
         optimizer = optim.RMSprop(model.parameters())
     else:
