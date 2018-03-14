@@ -76,14 +76,19 @@ I added one more convolution with different kernel size and I didn't tune the ne
 
 Red - Removed Layer, Blue - Default
 
-I removed the second convolution layer and the outcome of this effect is underfitting of the model. If in the previous case the underfitting was due to bad tuning of hyperparameters, here the model is "simpler" in terms of having less number of neurons.
+I removed the second convolution layer and we see that this has almost no effect on the results. One of the reason I chose the second convolution layer is the assumption that the first convolution layer already indentifies main features in order to recognize the object.
 
 ### Question 13
 ![alt_text](https://github.com/deep-learning-jhu/p02-fashion-mnist-team7/blob/master/screenshots/fashion_mnist_ultimate.png)
 
 Ultimate model, where I used 4 Convolutional layers with Batch Normalization and 3 Fully Connected Layers. For each layer dropout is applied. According to the plots, we reach the best validation accuracy (> 92%). Training loss and accuracies are noisy due to batch size chosen to be 64. Training time increased comparably to default model, since my model is more complex and deeper. It takes about 40 mins to run on CPU on regular laptop. 
 
-Choosing the model was limited by several factors. First it shouldn't be too deep and complicated since the run should take less than 90 mins. Second I chose model to be complex enough with many regularization technique to overcome overfitting.
-The most significant changes here are BatchNormalization and Dropout techniques after each layer. Algorithmically BatchNorm and dropout are regularization techniques and helps to train the model faster. On top of that, due to batch norm, we have smoothing effect of gradient calculation during backpropagation (mathematically).
+Choosing the model was limited by several factors. First it shouldn't be too deep and complicated since the run should take less than 90 mins on regular CPU. Second I chose model to be complex enough with many regularization technique to overcome overfitting.
+
+The most significant changes here are BatchNormalization and Dropout techniques after each layer. Algorithmically BatchNorm and dropout are regularization techniques and helps to train the model faster. On top of that, due to batch norm, we have smoothing effect of gradient calculation during backpropagation (mathematically). The best performance of the model was saved in 'best_model.pt' file
 
 ### Question 14
+Running pretrained model on MNIST dataset with best parameters obtained during training on Fashion MNIST data gives us poor results of ~15%. To run the model we need to pass the argument in command line --transfer True.
+
+### Question 15
+After several of epochs we are getting around 99% of accuracy which 2% improvement over training the model from scratch on MNIST dataset.
