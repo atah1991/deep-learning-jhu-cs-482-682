@@ -8,14 +8,14 @@
 
 Blue - Fashion MNIST, Orange - MNIST
 
-As we see default setting for CNN is performing much better on MNIST (~97%) dataset rather than on Fashion MNIST(~87%). Looking at validation accuracies and losses we can conclude that validation curves are not saturated, so there is a room for improvement with increasing number of epochs (we will see that in the next question)
+As we see default setting for CNN is performing much better on MNIST (~97%) dataset rather than on Fashion MNIST(~87%). Looking at validation accuracies and losses we can conclude that validation curves are not saturated, so there is a room for improvement with increasing number of epochs (we will see that in the next question). THere is no sign of overfitting, since the validation accuracy is still decreasing with training accuracy.
 
 ### Question 2
 ![alt_text](https://github.com/deep-learning-jhu/p02-fashion-mnist-team7/blob/master/screenshots/default_mnist_vs_fashion_epochs_20.png)
 
 Blue - Fashion MNIST, Orange - MNIST
 
-As we mentioned, here validation accuracy gets to plateau and overall results are a bit better (~98% and ~85%) for MNIST and Fashion MNIST respectively. Increasing number of epochs, we allow gradient descent to converge further until more or less stable local minimum.
+As we mentioned, here validation accuracy gets to plateau and overall results are a bit better (~98% and ~85%) for MNIST and Fashion MNIST respectively. Increasing number of epochs, we allow gradient descent to converge further until more or less stable local minimum. Still no sign of overfitting.
 
 ### Question 3
 ![alt_text](https://github.com/deep-learning-jhu/p02-fashion-mnist-team7/blob/master/screenshots/fashion_mnist_epochs_20_lr_0.1_0.01_0.001.png)
@@ -81,7 +81,9 @@ I removed the second convolution layer and the outcome of this effect is underfi
 ### Question 13
 ![alt_text](https://github.com/deep-learning-jhu/p02-fashion-mnist-team7/blob/master/screenshots/fashion_mnist_ultimate.png)
 
-Ultimate model, where I used 4 Convolutional layers with Batch Normalization and 3 Fully Connected Layers. For each layer dropout is applied. According to the plots, we reach the best validation accuracy (> 92%). Training time increased comparably to default model, since my model is more complex and deeper. It takes about 40 mins to run on CPU on regular laptop. 
+Ultimate model, where I used 4 Convolutional layers with Batch Normalization and 3 Fully Connected Layers. For each layer dropout is applied. According to the plots, we reach the best validation accuracy (> 92%). Training loss and accuracies are noisy due to batch size chosen to be 64. Training time increased comparably to default model, since my model is more complex and deeper. It takes about 40 mins to run on CPU on regular laptop. 
 
 Choosing the model was limited by several factors. First it shouldn't be too deep and complicated since the run should take less than 90 mins. Second I chose model to be complex enough with many regularization technique to overcome overfitting.
-The most significant changes here are BatchNormalization and Dropout techniques after each layer. Algorithmically BatchNorm and dropout are regularization techniques and helps to train the model faster. On top of that, due to batch norm, we have smoothing effect of gradient calculation during backpropagation (mathematically.  
+The most significant changes here are BatchNormalization and Dropout techniques after each layer. Algorithmically BatchNorm and dropout are regularization techniques and helps to train the model faster. On top of that, due to batch norm, we have smoothing effect of gradient calculation during backpropagation (mathematically).
+
+### Question 14
