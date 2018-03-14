@@ -53,6 +53,9 @@ python p02_fashion_mnist.py --dataset fashion_mnist --model P2Q11ExtraConvNet --
 # Question 12
 python p02_fashion_mnist.py --dataset fashion_mnist --model P2Q12RemoveLayerNet --name q12_remove_layer_net --data_dir ../data/q12
 
+# Question 13
+python p02_fashion_mnist.py --dataset fashion_mnist --model P2Q13UltimateNet --lr 0.001 --optimizer adam --batch-size 128 --name q13_ultimate_model --data_dir ../data/q13
+
 # ...and so on, hopefully you have the idea now.
 
 # TODO You should fill this file out the rest of the way!
