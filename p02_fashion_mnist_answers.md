@@ -53,5 +53,28 @@ Blue - Double channels, Orange - Half channels
 If we think in simple terms, then the network with half channels is simpler network that could lead to underfitting while the network with double channels should tend to overfit. From plots we see that both validation losses are not saturated, first. Secondly, the network with double channels performing better, which makes sense since increasing depth or width of network should show better validation accuracies up to some point
 
 ### Question 8
+![alt_text](https://github.com/deep-learning-jhu/p02-fashion-mnist-team7/blob/master/screenshots/fashion_mnist_batch_norm.png)
 
+Blue - BatchNorm, Orange - Default
+
+Batch normalization generally is good for faster learning and smoother gradient values during backpropagation. It is well known, that batch norm overall increases the performance of neural nets. We see this on validation accuracy plots. 
+
+### Question 9 and 10
+![alt_text](https://github.com/deep-learning-jhu/p02-fashion-mnist-team7/blob/master/screenshots/fashion_mnist_batch_norm_dropouts.png)
+
+We observe no difference between the neural nets where the order of dropout layer and batch norm layer are swapped. One assumption about it can be that batch norm is reducing overfitting as well as dropout, so if batch norm or dropout layer increase the overall accuracy separately, then the next layer wouldn't make any difference.
+
+### Question 11
+![alt_text](https://github.com/deep-learning-jhu/p02-fashion-mnist-team7/blob/master/screenshots/fashion_mnist_extra_conv.png)
+
+Blue - Extra Convolution, Orange - Default
+
+I added one more convolution with different kernel size and I didn't tune the networks enough. But with default setting of hyperparameters we see the poor performance of CNN with extra convolution
+
+### Question 12
+![alt_text](https://github.com/deep-learning-jhu/p02-fashion-mnist-team7/blob/master/screenshots/fashion_mnist_remove_layer.png)
+
+Blue - Removed Layer, Orange - Default
+
+I removed the second convolution layer and the outcome of this effect is underfitting of the model. If in the previous case the underfitting was due to bad tuning of hyperparameters, here the model is "simpler" in terms of having less number of neurons.
 
