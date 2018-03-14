@@ -36,7 +36,7 @@ parser.add_argument('--optimizer', type=str, default='sgd', metavar='O',
                     help='Optimizer options are sgd, p1sgd, adam, rms_prop')
 parser.add_argument('--momentum', type=float, default=0.5, metavar='MO',
                     help='SGD momentum (default: 0.5)')
-parser.add_argument('--no-cuda', action='store_true', default=False,
+parser.add_argument('--no-cuda', action='store_true', default=True,
                     help='disables CUDA training')
 parser.add_argument('--seed', type=int, default=1, metavar='S',
                     help='random seed (default: 1)')
@@ -57,6 +57,10 @@ parser.add_argument('--model', type=str, default='default', metavar='M',
                     P2Q11ExtraConvNet, P2Q12RemoveLayerNet, and P2Q13UltimateNet.""")
 parser.add_argument('--print_log', action='store_true', default=False,
                     help='prints the csv log when training is complete')
+
+parser.add_argument('--transfer', type=bool, default=False,
+                    help='apply pretrained model')
+
 
 dropout = 0.5 if 'annotations' not in globals() else parser.parse_args().dropout                    
 
@@ -469,7 +473,7 @@ def test(model, test_loader, tensorboard_writer, callbacklist, epoch, total_mini
 
     test_size = np.array(len(test_loader.dataset), np.float32)
     test_loss /= test_size
-
+    print (correct)
     acc = np.array(correct, np.float32) / test_size
     epoch_logs = {'val_loss': np.array(test_loss),
                   'val_acc': np.array(acc)}
@@ -492,6 +496,33 @@ def run_experiment(args):
     if args.cuda:
         torch.cuda.manual_seed(args.seed)
 
+    if args.transfer:
+        model = torch.load('best_model.pt')
+        model.eval()
+        correct = 0
+        total = 0
+        tensorboard_writer, callbacklist, train_loader, test_loader = prepareDatasetAndLogging(args)
+        #val_acc = test(model, test_loader, tensorboard_writer,
+                       #callbacklist, 1, 320)
+
+        test_size = np.array(len(test_loader.dataset), np.float32)
+        progress_bar = tqdm(test_loader, desc='Validation')
+
+        for data, target in test_loader:
+            if args.cuda:
+                data, target = data.cuda(), target.cuda()
+            data, target = Variable(data, volatile=True), Variable(target)
+            outputs = model(data)
+            _, predicted = torch.max(outputs.data, 1)
+            correct += predicted.eq(target.data.view_as(predicted)).cpu().sum()
+        acc = np.array(correct, np.float32) / test_size
+        progress_bar.write(
+        'validation test results -  val_acc:({:.2f}%)'.format(
+            100. * correct / len(test_loader.dataset)))
+        print (len(test_loader.dataset))
+        return
+
+    
     epochs_to_run = args.epochs
     tensorboard_writer, callbacklist, train_loader, test_loader = prepareDatasetAndLogging(args)
     model = chooseModel(args.model)
