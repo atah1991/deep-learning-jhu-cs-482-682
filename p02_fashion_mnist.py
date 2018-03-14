@@ -36,7 +36,7 @@ parser.add_argument('--optimizer', type=str, default='sgd', metavar='O',
                     help='Optimizer options are sgd, p1sgd, adam, rms_prop')
 parser.add_argument('--momentum', type=float, default=0.5, metavar='MO',
                     help='SGD momentum (default: 0.5)')
-parser.add_argument('--no-cuda', action='store_true', default=True,
+parser.add_argument('--no-cuda', action='store_true', default=False,
                     help='disables CUDA training')
 parser.add_argument('--seed', type=int, default=1, metavar='S',
                     help='random seed (default: 1)')
@@ -496,17 +496,14 @@ def run_experiment(args):
     if args.cuda:
         torch.cuda.manual_seed(args.seed)
 
+
+    # Only for pretrained model run on MNIST dataset
     if args.transfer:
         model = torch.load('best_model.pt')
         model.eval()
         correct = 0
-        total = 0
         tensorboard_writer, callbacklist, train_loader, test_loader = prepareDatasetAndLogging(args)
-        #val_acc = test(model, test_loader, tensorboard_writer,
-                       #callbacklist, 1, 320)
-
         test_size = np.array(len(test_loader.dataset), np.float32)
-        progress_bar = tqdm(test_loader, desc='Validation')
 
         for data, target in test_loader:
             if args.cuda:
@@ -515,17 +512,16 @@ def run_experiment(args):
             outputs = model(data)
             _, predicted = torch.max(outputs.data, 1)
             correct += predicted.eq(target.data.view_as(predicted)).cpu().sum()
-        acc = np.array(correct, np.float32) / test_size
-        progress_bar.write(
-        'validation test results -  val_acc:({:.2f}%)'.format(
+        print ('Total accuracy: ({:.2f}%)'.format(
             100. * correct / len(test_loader.dataset)))
-        print (len(test_loader.dataset))
         return
 
     
     epochs_to_run = args.epochs
     tensorboard_writer, callbacklist, train_loader, test_loader = prepareDatasetAndLogging(args)
     model = chooseModel(args.model)
+    if args.model == 'P2Q13UltimateNet' and args.dataset == 'mnist':
+        model = torch.load('best_model.pt')
     # tensorboard_writer.add_graph(model, images[:2])
     optimizer = chooseOptimizer(model, args.optimizer)
     # Run the primary training loop, starting with validation accuracy of 0
