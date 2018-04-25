@@ -141,7 +141,7 @@ class Net(nn.Module):
         self.conv1 = nn.Conv2d(1, 10, kernel_size=5)
         self.conv2 = nn.Conv2d(10, 20, kernel_size=5)
         self.fc1 = nn.Linear(320, 50)
-        self.fc2 = nn.Linear(50, 10)
+        self.fc2 = nn.Linear(50, 1)
 
     def forward(self, x):
         # F is just a functional wrapper for modules from the nn package
@@ -152,7 +152,8 @@ class Net(nn.Module):
         x = F.relu(self.fc1(x))
         x = F.dropout(x, training=self.training)
         x = self.fc2(x)
-        return F.log_softmax(x, dim=1)
+        #return F.softmax(x, dim=1)
+        return F.sigmoid(x)
 
 
 class P2Q7HalfChannelsNet(nn.Module):
@@ -275,14 +276,16 @@ def train(model, optimizer, train_loader, tensorboard_writer, callbacklist, epoc
     correct_count = np.array(0)
     for batch_idx, (data, target) in enumerate(train_loader):
         callbacklist.on_batch_begin(batch_idx)
-        if args.cuda:
+        if args.cuda: 
             data, target = data.cuda(), target.cuda()
         data, target = Variable(data), Variable(target)
         optimizer.zero_grad()
 
         # Forward prediction step
         output = model(data)
-        loss = F.nll_loss(output, target)
+        output = Variable(output.data.long())
+        print (type(target.data), type(output.data))
+        loss = F.binary_cross_entropy(output, target)
 
         # Backpropagation step
         loss.backward()

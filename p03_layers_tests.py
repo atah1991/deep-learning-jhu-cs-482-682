@@ -289,15 +289,47 @@ def test_nets():
 def test_sgd():
     return TestOptim
 
+class TestDropout(TestCase):
+    def test_p3dropout(self):
 
-def test_p3dropout():
-    # TODO Implement me
-    pass
+        #testing dropout behaviour at training mode or when p = 0
+        input = Variable(torch.randn(5))
+        m = p03_layers.P3Dropout(0.0, inplace = False, training = True)
+        output = m(input)
+        self.assertEqual(output, input)
+        m = p03_layers.P3Dropout(0.5, inplace = False, training = False)
+        output = m(input)
+        self.assertEqual(output, input)
+
+        #testing wrong probability values
+        self.assertRaises(ValueError, p03_layers.P3Dropout, 1.2)
+        self.assertRaises(ValueError, p03_layers.P3Dropout, -0.4)
+
+        #testing inplace property
+        input = Variable(torch.randn(5))
+        m = p03_layers.P3Dropout(0.5, inplace = False, training = True)
+        output = m(input)
+        self.assertNotEqual(output, input)
+        m = p03_layers.P3Dropout(0.5, inplace = True, training = True)
+        output = m(input)
+        self.assertEqual(output, input)
+
+        #testing for correctness of results
+        #input = Variable(torch.randn(5))
+        p = 0.5
+        m = p03_layers.P3Dropout(p, training = True)
+        count = 0
+        for _ in range(1000):
+            input = Variable(torch.randn(100))
+            output = m(input)
+            count += output.nonzero().numel()
+        print (count)
+        self.assertAlmostEqual(count/(1000*100), p, 1e-3)
 
 
-def test_p3dropout2d():
-    # TODO Implement me
-    pass
+    def test_p3dropout2d(self):
+        # TODO Implement me
+        pass
 
 
 def test_p3linear():
