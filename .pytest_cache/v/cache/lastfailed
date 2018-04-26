@@ -1,8 +1,13 @@
 {
+  "p03_layers_tests.py::TestActivations": true,
   "p03_layers_tests.py::TestActivations::test_p3bce_loss": true,
   "p03_layers_tests.py::TestActivations::test_p3elu": true,
+  "p03_layers_tests.py::TestCase": true,
+  "p03_layers_tests.py::TestDropout": true,
+  "p03_layers_tests.py::TestLinear": true,
   "p03_layers_tests.py::TestLinear::test_p3elu": true,
   "p03_layers_tests.py::TestLinear::test_p3relu_class": true,
   "p03_layers_tests.py::TestLinear::test_p3relu_function": true,
+  "p03_layers_tests.py::TestOptim": true,
   "p03_layers_tests.py::test_p3dropout": true
 }
