@@ -11,6 +11,7 @@ from torch.autograd import Variable
 from torch import sparse
 from test_common import TestCase, run_tests
 import p03_layers
+import torch.nn as nn
 
 
 def rosenbrock(tensor):
@@ -325,36 +326,128 @@ class TestDropout(TestCase):
             count += output.nonzero().numel()
         print (count)
         self.assertAlmostEqual(count/(1000*100), p, 1e-3)
+        
+        #testing for consistent type of input and output
+        input = Variable(torch.randn(5))
+        m = p03_layers.P3Dropout()
+        output = m(input)
+        self.assertIsInstance(input.data, type(output.data))
 
 
     def test_p3dropout2d(self):
         # TODO Implement me
         pass
 
+class TestLinear(TestCase):
 
-def test_p3linear():
-    # TODO Implement me
-    pass
+    #testing Linear modules forward for correctness
+    def test_p3linear(self):
+
+        input = Variable(torch.randn(128, 20))
+
+        torch.manual_seed(7)
+        nn_model = nn.Linear(20, 30)
+        nn_output = nn_model(input)
+
+        torch.manual_seed(7)
+        my_model = p03_layers.P3Linear(20,30)
+        my_output = my_model(input)
+
+        self.assertEqual(nn_output, my_output)
+
+    #testing for correct saving of parameters for backprop
+    def test_p3linear_saving_for_backwards(self):
+        input = Variable(torch.randn(128, 20))
+        my_model = p03_layers.P3Linear(20,30)
+        my_func = p03_layers.P3LinearFunction()
+        output = my_func(input, my_model.weight, my_model.bias)
+        saved_input, saved_weights, saved_bias = my_func.saved_variables
+
+        self.assertEqual(input, saved_input)
+        self.assertEqual(saved_weights, my_model.weight)
+        self.assertEqual(saved_bias, my_model.bias)
+
+class TestActivations(TestCase):
+    def test_p3relu_function(self):
+
+        #testing the correctness of relu
+        input = Variable(torch.randn(5))
+        output = p03_layers.p3relu(input)
+        nn_output = F.relu(input)
+        self.assertEqual(nn_output, output)
+        self.assertIsInstance(input.data, type(output.data))
+
+        #testing the correctness of relu with inplace
+        p03_layers.p3relu(input, inplace = True)
+        nn_output = F.relu(input)
+        self.assertEqual(nn_output, input)
 
 
-def test_p3relu_function():
-    # TODO Implement me
-    pass
+
+    def test_p3relu_class(self):
+        input = Variable(torch.randn(5))
+        my_relu = p03_layers.P3ReLU()
+        output = my_relu(input)
+        nn_relu = nn.ReLU()
+        nn_output = nn_relu(input)
+        self.assertEqual(nn_output, output)
+        self.assertIsInstance(input.data, type(output.data))
+
+        #testing the correctness of relu with inplace
+        my_relu = p03_layers.P3ReLU(inplace = True)
+        my_relu(input)
+        nn_relu = nn.ReLU()
+        nn_output = nn_relu(input)
+        self.assertEqual(nn_output, input)
+
+    def test_p3elu_function(self):
+        # testing for 1D input tensor
+        input = Variable(torch.randn(5))
+        my_func = p03_layers.P3ELUFunction()
+        output = my_func(input)
+        nn_output = F.elu(input)
+        self.assertEqual(output, nn_output)
+
+        # testing for 2D input tensor
+        input = Variable(torch.randn(5,10))
+        my_func = p03_layers.P3ELUFunction()
+        output = my_func(input)
+        nn_output = F.elu(input)
+        self.assertEqual(output, nn_output)
 
 
-def test_p3relu_class():
-    # TODO Implement me
-    pass
+    def test_p3elu_class(self):
+        input = Variable(torch.randn(5))
+        my_elu = p03_layers.P3ELU()
+        output = my_elu.forward(input)
+        nn_elu = nn.ELU()
+        nn_output = nn_elu(input)
+        self.assertEqual(nn_output, output)
+        self.assertIsInstance(input.data, type(output.data))
 
+     # testing for different alpha
+    def test_p3elu_class(self):
+        input = Variable(torch.randn(5))
+        my_elu = p03_layers.P3ELU(2.5, False)
+        output = my_elu(input)
+        nn_elu = nn.ELU(alpha = 2.5, inplace = False)
+        nn_output = nn_elu(input)
+        self.assertEqual(nn_output, output)
+        self.assertIsInstance(input.data, type(output.data))
 
-def test_p3elu():
-    # TODO Implement me
-    pass
+    # testing for inplace argument
+    def test_p3elu_class(self):
+        input = Variable(torch.randn(5))
+        my_elu = p03_layers.P3ELU(2.5, True)
+        nn_output = F.elu(input, alpha = 2.5)
+        my_elu(input)
+        self.assertEqual(nn_output, input)
+        self.assertIsInstance(input.data, type(input.data))
 
-
+'''#class TestActivations(TestCase):       
 def test_p3bce_loss():
-    # TODO Implement me
-    pass
+        
+    pass'''
 
 
 if __name__ == '__main__':

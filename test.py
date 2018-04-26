@@ -1,13 +1,13 @@
 import torch.nn as nn
+import torch.nn.functional as F
 import torch
 import p03_layers
 from torch.autograd import Variable
 
-input = torch.randn(5)
+input = Variable(torch.randn(5))
 print (input)
-m = p03_layers.P3Dropout(p=0.5, inplace = False, training = True)
-output = m(Variable(input))
-
+my_elu = p03_layers.P3ELU(2.5, True)
+nn_output = F.elu(input, alpha = 2.5)
+my_elu(input)
 print (input)
-print (output)
-print (output.data.nonzero())
+print (nn_output)

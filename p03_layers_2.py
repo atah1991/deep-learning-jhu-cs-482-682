@@ -10,8 +10,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import torchvision
-import warnings
-from torch._C import _infer_size
 from torchvision import datasets
 from torchvision import transforms
 from torch.autograd import Variable
@@ -57,8 +55,14 @@ parser.add_argument('--model', type=str, default='default', metavar='M',
                     P2Q11ExtraConvNet, P2Q12RemoveLayerNet, and P2Q13UltimateNet.""")
 parser.add_argument('--print_log', action='store_true', default=False,
                     help='prints the csv log when training is complete')
+parser.add_argument('--handbag', default=-1,
+                    help='Do handbag classification?')
 
 required = object()
+
+
+def isVariable(var):
+    return type(var) == Variable
 
 
 def timeStamped(fname, fmt='%Y-%m-%d-%H-%M-%S_{fname}'):
@@ -67,11 +71,14 @@ def timeStamped(fname, fmt='%Y-%m-%d-%H-%M-%S_{fname}'):
     # http://stackoverflow.com/a/5215012/99379
     return datetime.datetime.now().strftime(fmt).format(fname=fname)
 
+
 # choose the dataset
 
 
 def prepareDatasetAndLogging(args):
     # choose the dataset
+    args.handbag = int(args.handbag)
+
     if args.dataset == 'mnist':
         DatasetClass = datasets.MNIST
     elif args.dataset == 'fashion_mnist':
@@ -92,13 +99,22 @@ def prepareDatasetAndLogging(args):
             transforms.ToTensor(),
             transforms.Normalize((0.1307,), (0.3081,))
         ]))
+    if args.handbag != -1:
+        train_dataset.train_labels[train_dataset.train_labels != args.handbag] = 0
+        train_dataset.train_labels[train_dataset.train_labels == args.handbag] = 1
+
+    # print(train_dataset.train_labels)
     train_loader = torch.utils.data.DataLoader(
         train_dataset, batch_size=args.batch_size, shuffle=True, **kwargs)
     test_dataset = DatasetClass(
         dataset_dir, train=False, transform=transforms.Compose([
-                        transforms.ToTensor(),
-                        transforms.Normalize((0.1307,), (0.3081,))
-                    ]))
+            transforms.ToTensor(),
+            transforms.Normalize((0.1307,), (0.3081,))
+        ]))
+    if args.handbag != -1:
+        test_dataset.test_labels[test_dataset.test_labels != args.handbag] = 0
+        test_dataset.test_labels[test_dataset.test_labels == args.handbag] = 1
+
     test_loader = torch.utils.data.DataLoader(
         test_dataset, batch_size=args.test_batch_size, shuffle=True, **kwargs)
 
@@ -216,6 +232,9 @@ class P3SGD(optim.Optimizer):
         for group in self.param_groups:
             group.setdefault('nesterov', False)
 
+    # def getdict(self):
+    #     return self.param_groups
+    #
     def step(self, closure=None):
         """Performs a single optimization step.
 
@@ -232,28 +251,41 @@ class P3SGD(optim.Optimizer):
             momentum = group['momentum']
             dampening = group['dampening']
             nesterov = group['nesterov']
-            lr = group['lr']
+            learning_rate = group['lr']
 
+            # You will also need to use:
+            #
+            # 1. The gradient of the current param
+            #       d_p = p.grad.data
+            # 2. The momentum buffer storing the previous step's momentum
+            #       param_state['momentum_buffer']
+            # 3. The current stored learning rate
+            #       group['lr']
             for p in group['params']:
                 if p.grad is None:
                     continue
-                d_p = p.grad.data
+                gradient = p.grad.data
+
                 if weight_decay != 0:
-                    d_p.add_(weight_decay, p.data)
+                    gradient.add_(weight_decay, p.data)
+
                 if momentum != 0:
                     param_state = self.state[p]
                     if 'momentum_buffer' not in param_state:
                         buf = param_state['momentum_buffer'] = torch.zeros_like(p.data)
-                        buf.mul_(momentum).add_(d_p)
+                        buf.mul_(momentum).add_(gradient)
+
                     else:
                         buf = param_state['momentum_buffer']
-                        buf.mul_(momentum).add_(1 - dampening, d_p)
-                    if nesterov:
-                        d_p = d_p.add(momentum, buf)
-                    else:
-                        d_p = buf
+                        buf.mul_(momentum).add_(1 - dampening, gradient)
 
-                p.data.add_(-lr, d_p)
+                    if nesterov:
+                        gradient = gradient.add(momentum, buf)
+                    else:
+                        gradient = buf
+
+                p.data.add_(-learning_rate, gradient)
+
         return loss
 
 
@@ -282,37 +314,32 @@ class P3Dropout(nn.Module):
         detectors: https://arxiv.org/abs/1207.0580
     """
 
-    def __init__(self, p=0.5, inplace=False, training = False):
+    def __init__(self, p=0.5, inplace=False):
         super(P3Dropout, self).__init__()
-        if p < 0 or p > 1:
-            raise ValueError("dropout probability has to be between 0 and 1, "
-                             "but got {}".format(p))
-        self.p = p
         self.inplace = inplace
-        self.training = training
+        self.p, self.frac = p, 1 / (1 - p)
 
     def forward(self, input):
-        # No dropout or evaluation mode
-        if self.p == 0 or self.training  == False:
+        if not isVariable(input):
+            input = Variable(input)
+        type_ = type(input.data)
+
+        if not self.training or self.p == 0:
             return input
 
-        # creating binary mask    
-        noise = input.data.new().resize_as_(input.data)
-        noise.bernoulli_(self.p)
-        noise = Variable(noise)
+        mask = Variable(torch.rand(input.shape))
 
         if self.inplace:
-            input.mul_(noise)
-            return input.div_(1 - self.p)  
-        clone = input
-        output = clone.mul(noise).div(1- self.p)
-        return output
-        
-        
+            input.mul_(torch.mul((mask > self.p).type(type_), self.frac))
+            return input
+        else:
+            return torch.mul(input, torch.mul((mask > self.p).type(type_), self.frac))
+
     def __repr__(self):
         inplace_str = ', inplace' if self.inplace else ''
-        return (self.__class__.__name__ + '(' + 'p=' + str(self.p) +
-                inplace_str + ')')
+        return self.__class__.__name__ + '(' \
+               + 'p=' + str(self.p) \
+               + inplace_str + ')'
 
 
 class P3Dropout2d(nn.Module):
@@ -344,81 +371,85 @@ class P3Dropout2d(nn.Module):
 
     def __init__(self, p=0.5, inplace=False):
         super(P3Dropout2d, self).__init__()
-        if p < 0 or p > 1:
-            raise ValueError("dropout probability has to be between 0 and 1, "
-                             "but got {}".format(p))
-        self.p = p
         self.inplace = inplace
+        self.p, self.frac = p, 1 / (1 - p)
 
     def forward(self, input):
+        if not isVariable(input):
+            input = Variable(input)
+        type_ = type(input.data)
+
         if not self.training or self.p == 0:
             return input
 
-        noise = torch.zeros([input.shape[0], input.shape[1]])
-        noise.bernoulli_(self.p)
-        mask = noise.view(-1, input.shape[1], 1, 1)
-        mask = Variable(mask)
+        num_feature_maps = [input.shape[0], input.shape[1]]
+
+        random_tensor = torch.mul((torch.rand(num_feature_maps) > self.p).type(type_), self.frac)
+        mask = Variable(random_tensor.view(-1, input.shape[1], 1, 1))
 
         if self.inplace:
             input.mul_(mask)
-            input.div_(1 - self.p)
             return input
-        return input.mul(mask).div(1 - self.p)
+        else:
+            return input.mul(mask)
 
     def __repr__(self):
         inplace_str = ', inplace' if self.inplace else ''
-        return self.__class__.__name__ + '(' + 'p=' + str(self.p) + inplace_str + ')'
+        return self.__class__.__name__ + '(' \
+               + 'p=' + str(self.p) + inplace_str + ')'
 
 
-'''def linear(input, weight, bias=None):
+def linear(input, weight, bias=None):
     """
     Applies a linear transformation to the incoming data: :math:`y = xA^T + b`.
     Shape:
         - Input: :math:`(N, *, in\_features)` where `*` means any number of
           additional dimensions
         - Weight: :math:`(out\_features, in\_features)`
-        - Bias: :math:`(out\_features)`
+        - Bias: :masth:`(out\_features)`
         - Output: :math:`(N, *, out\_features)`
     """
-    if input.dim() == 2 and bias is not None:
-        # fused op is marginally faster
-        return torch.addmm(bias, input, weight.t())
 
-    output = input.matmul(weight.t())
-    if bias is not None:
-        output += bias
-    return output'''
+    return P3LinearFunction.apply(input, weight, bias)
+
 
 class P3LinearFunction(torch.autograd.Function):
     """See P3Linear for details.
     """
-    def forward(self, input, weight, bias = None):
-        self.save_for_backward(input, weight, bias)
-        if input.dim() == 2 and bias is not None:
-        # fused op is marginally faster
-            return torch.addmm(bias, input, weight.t())
+
+    @staticmethod
+    def forward(ctx, input, weight, bias=None):
+        ctx.save_for_backward(input, weight, bias)
 
         output = input.matmul(weight.t())
         if bias is not None:
             output += bias
+
         return output
 
-    def backward(self, grad_output):
+    @staticmethod
+    def backward(ctx, grad_output):
+        # print(ctx.saved_variables)
+
         """
         In the backward pass we receive a Tensor containing the gradient of the loss
         with respect to the output, and we need to compute the gradient of the loss
         with respect to the input.
         """
-        input, weight, bias = self.saved_variables
+        # nn.Linear()
+        input, weight, bias = ctx.saved_variables
         grad_input = grad_weight = grad_bias = None
 
-        if self.needs_input_grad[0]:
-            grad_input = grad_output.mm(weight.data)
-        if self.needs_input_grad[1]:
-            grad_weight = grad_output.t().mm(input.data)
-        if bias is not None and self.needs_input_grad[2]:
-            grad_bias = grad_output.sum(0).squeeze(0)
+        # Grad Input
+        grad_input = torch.matmul(grad_output, weight)
 
+        # Grad Weight
+        grad_weight = torch.matmul(grad_output.view(-1, grad_output.shape[-1]).t(), input.view(-1, input.shape[-1]))
+        # Grad Bias
+        if bias is not None:
+            grad_bias = grad_output.view(-1, grad_output.shape[-1]).sum()
+
+        # print('Print grad input: ',grad_input.shape, ' Grad weight: ', grad_weight.shape, ' Grad Bias: ', grad_bias.shape)
         return grad_input, grad_weight, grad_bias
 
 
@@ -447,13 +478,13 @@ class P3Linear(nn.Module):
 
     def __init__(self, in_features, out_features, bias=True):
         super(P3Linear, self).__init__()
-        self.in_features = in_features
-        self.out_features = out_features
-        self.weight = nn.Parameter(torch.Tensor(out_features, in_features))
+        self.in_features, self.out_features = in_features, out_features
         if bias:
             self.bias = nn.Parameter(torch.Tensor(out_features))
         else:
             self.register_parameter('bias', None)
+
+        self.weight = nn.Parameter(torch.Tensor(out_features, in_features))
         self.reset_parameters()
 
     def reset_parameters(self):
@@ -463,7 +494,8 @@ class P3Linear(nn.Module):
             self.bias.data.uniform_(-stdv, stdv)
 
     def forward(self, input):
-        return P3LinearFunction()(input, self.weight, self.bias)
+        out = linear(input, self.weight, self.bias)
+        return (out)
 
     def __repr__(self):
         return (self.__class__.__name__ + '(' +
@@ -480,12 +512,9 @@ def p3relu(input, inplace=False):
     Args:
         inplace: can optionally do the operation in-place. Default: ``False``
     """
-    binary_mask = Variable((input.data >= 0).type_as(input.data))
     if inplace:
-        input.mul_(binary_mask)
-        return input
-    output = input.mul(binary_mask)
-    return output
+        return input.clamp_(min=0)
+    return torch.clamp(input, min=0)
 
 
 class P3ReLU(nn.Module):
@@ -514,7 +543,7 @@ class P3ReLU(nn.Module):
     def __repr__(self):
         inplace_str = 'inplace' if self.inplace else ''
         return self.__class__.__name__ + '(' \
-            + inplace_str + ')'
+               + inplace_str + ')'
 
 
 class P3ELUFunction(torch.autograd.Function):
@@ -534,32 +563,30 @@ class P3ELUFunction(torch.autograd.Function):
         >>> output = m(input)
     """
 
-    def forward(self, input, alpha = 1., inplace = False):
-        max_mask = (input >= 0).type_as(input)
-        min_mask = ((alpha * (input.exp() - 1.0)) <= 0).type_as(input)  
-        mask = (max_mask + min_mask)
-        self.save_for_backward(input, max_mask, min_mask, alpha)
+    @staticmethod
+    def forward(self, input, alpha, inplace):
+        self.save_for_backward(input, alpha)
+        gamma = torch.mul(torch.exp(input) - 1, 1)
+        output = input.clamp(min=0) + gamma.clamp(max=0)
+        self.out = output
+        return output
 
-        if inplace:
-            temp = input.clone()
-            input.mul_(max_mask)
-            input.add_(alpha * temp.exp().mul(min_mask) - alpha*min_mask)
-            return input
-        term1 = input.mul(max_mask)
-        term2 = alpha * input.exp().mul(min_mask) - alpha*min_mask
-        return term1 + term2
-
-
+    @staticmethod
     def backward(self, grad_output):
         """
         In the backward pass we receive a Tensor containing the gradient of the loss
         with respect to the output, and we need to compute the gradient of the loss
         with respect to the input.
         """
-        input, max_mask, min_mask, alpha = self.saved_variables
-        grad_input = None
-        grad_input = grad_output * (max_mask + alpha * input.exp().mul(min_mask))
-        return grad_input
+        input, alpha = self.saved_variables
+        # no need to precompute f(x)
+        fx = Variable(self.out) + alpha
+
+        temp = input.clone()
+        temp[input.data < 0] = fx[input.data < 0]
+
+        type_ = type(input.data)
+        return grad_output.type(type_) * temp, None, None
 
 
 class P3ELU(nn.Module):
@@ -579,16 +606,16 @@ class P3ELU(nn.Module):
         >>> output = m(input)
     """
 
-    def __init__(self, alpha = 1.0, inplace = False):
+    def __init__(self, alpha=1.0, inplace=False):
         super(P3ELU, self).__init__()
-        #if (alpha < 0.0):
-        #    raise ValueError("alpha parameter can't be negative")
-        self.alpha = alpha
+        self.alpha = alpha #nn.Parameter(torch.from_numpy(np.asarray([alpha])).float())
         self.inplace = inplace
 
-
     def forward(self, input):
-        return P3ELUFunction.apply(input, self.alpha, self.inplace)
+        if self.inplace:
+            input.data.copy_(P3ELUFunction.apply(input, self.alpha, self.inplace).data)
+        else:
+            return P3ELUFunction.apply(input, self.alpha, self.inplace)
 
     def __repr__(self):
         inplace_str = ', inplace' if self.inplace else ''
@@ -597,6 +624,9 @@ class P3ELU(nn.Module):
 
 
 class P3BCELoss(_WeightedLoss):
+    '''
+        Create fixed variable and check the loss
+    '''
     r"""Creates a criterion that measures the Binary Cross Entropy
     between the target and the output:
     The loss can be described as:
@@ -638,44 +668,32 @@ class P3BCELoss(_WeightedLoss):
         >>> output = loss(m(input), target)
         >>> output.backward()
     """
+
     def __init__(self, weight=None, size_average=True, reduce=True):
         super(P3BCELoss, self).__init__(weight, size_average)
         self.reduce = reduce
         self.weight = weight
         self.size_average = size_average
+        self.reduce = reduce
 
     def forward(self, input, target):
         _assert_no_grad(target)
-        if not (target.size() == input.size()):
-            warnings.warn("Using a target size ({}) that is different to the input size ({}) is deprecated. "
-                      "Please ensure they have the same size.".format(target.size(), input.size()))
+        # loss = (-target * torch.log(input) - (1-target)*torch.log((1-input)))
 
-        if input.nelement() != target.nelement():
-            raise ValueError("Target and input must have the same number of elements. target nelement ({}) "
-                         "!= input nelement ({})".format(target.nelement(), input.nelement()))
-
-        
-        #if self.weight is not None:
-        #    new_size = _infer_size(target.size(), self.weight.size())
-        #    self.weight = self.weight.expand(new_size)
-
-        #target = Variable(target.data.float())
-
-
-        #loss = -(target.mul(torch.log(input.clamp(min=1e-9))) + (1 - target).mul(torch.log((1 - input).clamp(min=1e-9))))
-
-
-        #target = Variable(target.data.float())
         if self.weight is None:
-            self.weight = torch.ones(input.shape[1]).type_as(input.data)
-        #target_ = target.unsqueeze(1)
-        #one_hot = (torch.zeros(input.shape).zero_())
-        #one_hot.scatter_(0, target_.data.cpu(), 1.0)
-        #one_hot = Variable(one_hot.cuda())
+            self.weight = torch.ones(input.shape[1])
+
+        # This is to fix if the input is equal to 0 as it will result in nan
+        # print(one_hot.size(), input.size())
+        # print(type(target), type(input))
+        # print((target.shape), input.shape)
 
         loss = (-target * torch.log(input.clamp(min=1e-9)) - (1 - target) * torch.log((1 - input).clamp(min=1e-9)))
+        # print(target[0], one_hot[0], input[0])
+        # input = input + Variable(torch.ones(input.shape) * 0.001)
+        # seg1 = torch.log(input) * Variable(one_hot)
+        # seg2 = torch.log(1 - input + Variable(torch.ones(input.shape) * 0.002)) * Variable(1 - one_hot)
         loss = Variable(self.weight) * loss
-
 
         if self.reduce:
             if self.size_average:
@@ -684,9 +702,7 @@ class P3BCELoss(_WeightedLoss):
                 loss = torch.sum(loss)
         return loss
 
-        
 
-        
 # Define the neural network classes
 
 
@@ -696,27 +712,35 @@ class Net(nn.Module):
         self.conv1 = nn.Conv2d(1, 10, kernel_size=5)
         self.conv2 = nn.Conv2d(10, 20, kernel_size=5)
         self.fc1 = P3Linear(320, 50)
-        self.dropout = P3Dropout(p = 0.5)
-        #self.dropout2d = P3Dropout2d(p = 0.2)
         self.fc2 = P3Linear(50, 10)
+        self.relu = P3ReLU()
+        self.elu = P3ELU()
+
+        self.dropout = P3Dropout(p=0.5)
+        self.dropout2d = P3Dropout2d(p=0.2)
 
     def forward(self, x):
         # F is just a functional wrapper for modules from the nn package
         # see http://pytorch.org/docs/_modules/torch/nn/functional.html
-        x = p3relu(F.max_pool2d(self.conv1(x), 2))
-        x = p3relu(F.max_pool2d(self.conv2(x), 2))
+        x = self.dropout2d(self.relu(F.max_pool2d(self.conv1(x), 2)))
+        # print(type(F.max_pool2d(self.conv2(x), 2)))
+
+        x = self.elu(F.max_pool2d(self.conv2(x), 2))
         x = x.view(-1, 320)
-        x = p3relu(self.fc1(x))
+
+        x = self.relu(self.fc1(x))
         x = self.dropout(x)
         x = self.fc2(x)
-        return F.softmax(x, dim = 1)
-
+        return F.softmax(x, dim=1)
 
 
 def chooseModel(model_name='default', cuda=True):
     # TODO add all the other models here if their parameter is specified
     if model_name == 'default' or model_name == 'P2Q7DefaultChannelsNet':
         model = Net()
+        # if args.handbag != -1:
+        #     model = Net2()
+        #     print(model)
     elif model_name in globals():
         model = globals()[model_name]()
     else:
@@ -739,26 +763,39 @@ def chooseOptimizer(model, optimizer='sgd'):
     return optimizer
 
 
+bce_class = P3BCELoss()
+
+
 def train(model, optimizer, train_loader, tensorboard_writer, callbacklist, epoch, total_minibatch_count):
     # Training
     model.train()
     correct_count = np.array(0)
     for batch_idx, (data, target) in enumerate(train_loader):
         callbacklist.on_batch_begin(batch_idx)
+
         if args.cuda:
             data, target = data.cuda(), target.cuda()
         data, target = Variable(data), Variable(target)
+
         output = model(data)
         target_ = target.unsqueeze(1)
         one_hot = (torch.zeros(output.shape).zero_())
         one_hot.scatter_(1, target_.data, 1)
         one_hot = Variable(one_hot)
-        optimizer.zero_grad()
-        # Forward prediction step
-        loss_m = P3BCELoss()
-        loss = loss_m(output, one_hot)
-        #loss = F.nll_loss(output, target)
 
+        loss = bce_class(output, one_hot)  # sum up batch loss
+
+        # # get the shape of the output of the model
+        # dummy_out = model(Variable(torch.ones(data.shape)))
+        # target_ = target.unsqueeze(1)
+        # one_hot = (torch.zeros(dummy_out.shape).zero_())
+        # one_hot.scatter_(1, target_.data, 1)
+        # one_hot = Variable(one_hot)
+        optimizer.zero_grad()
+
+        # Forward prediction step
+        # output = model(data)
+        # loss = bce_class(output, one_hot)
 
         # Backpropagation step
         loss.backward()
@@ -792,7 +829,8 @@ def train(model, optimizer, train_loader, tensorboard_writer, callbacklist, epoc
             for name, param in model.named_parameters():
                 name = name.replace('.', '/')
                 tensorboard_writer.add_histogram(name, param.data.cpu().numpy(), global_step=total_minibatch_count)
-                tensorboard_writer.add_histogram(name + '/gradient', param.grad.data.cpu().numpy(), global_step=total_minibatch_count)
+                tensorboard_writer.add_histogram(name + '/gradient', param.grad.data.cpu().numpy(),
+                                                 global_step=total_minibatch_count)
 
         total_minibatch_count += 1
 
@@ -805,6 +843,7 @@ def train(model, optimizer, train_loader, tensorboard_writer, callbacklist, epoc
 
 def test(model, test_loader, tensorboard_writer, callbacklist, epoch, total_minibatch_count):
     # Validation Testing
+    bce_class = P3BCELoss(size_average=False)
     model.eval()
     test_loss = 0
     correct = 0
@@ -813,15 +852,14 @@ def test(model, test_loader, tensorboard_writer, callbacklist, epoch, total_mini
         if args.cuda:
             data, target = data.cuda(), target.cuda()
         data, target = Variable(data, volatile=True), Variable(target)
-         # get the shape of the output of the model
+        # get the shape of the output of the model
         dummy_out = model(Variable(torch.ones(data.shape)))
         target_ = target.unsqueeze(1)
         one_hot = (torch.zeros(dummy_out.shape).zero_())
         one_hot.scatter_(1, target_.data, 1)
         one_hot = Variable(one_hot)
         output = model(data)
-        loss_m = P3BCELoss(size_average = False)
-        test_loss += loss_m(output, one_hot).data[0]  # sum up batch loss
+        test_loss += bce_class(output, one_hot).data[0]  # sum up batch loss
         pred = output.data.max(1, keepdim=True)[1]  # get the index of the max log-probability
         correct += pred.eq(target.data.view_as(pred)).cpu().sum()
 
@@ -870,7 +908,8 @@ def run_experiment(args):
     tensorboard_writer.close()
 
     if args.dataset == 'fashion_mnist' and val_acc > 0.8 and val_acc <= 1.0:
-        print("Congratulations, you beat the Question 9 minimum of 0.80 with ({:.2f}%) validation accuracy!".format(val_acc))
+        print("Congratulations, you beat the Question 9 minimum of 0.80 with ({:.2f}%) validation accuracy!".format(
+            val_acc))
 
 
 if __name__ == '__main__':
